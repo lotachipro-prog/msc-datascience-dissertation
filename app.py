@@ -229,8 +229,6 @@ PLOTLY_THEME = dict(
     paper_bgcolor='rgba(0,0,0,0)',
     plot_bgcolor='rgba(13,25,38,0.8)',
     font=dict(family='DM Mono, monospace', color='#7a9ab5', size=11),
-    gridcolor='#1e2a3a',
-    zerolinecolor='#1e3a5a',
 )
 
 # ── DATA LOADING ──────────────────────────────────────────────────────
@@ -498,7 +496,7 @@ with tab1:
             xaxis=dict(title='Emissions YoY Change (%)',
                        gridcolor='#1e2a3a', zerolinecolor='#1e3a5a'),
             yaxis=dict(title='Vague Commitment Language (/1000 words)',
-                       gridcolor='#1e2a3a'),
+                       gridcolor='#1e2a3a', zerolinecolor='#1e3a5a'),
             margin=dict(l=10, r=10, t=10, b=10),
             hovermode='closest'
         )
