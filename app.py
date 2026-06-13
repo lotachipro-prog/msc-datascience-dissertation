@@ -412,11 +412,12 @@ with tab1:
         st.markdown('<p class="section-header">Cross-Modal Risk Matrix</p>',
                     unsafe_allow_html=True)
 
-        merged = filtered.merge(
-            features_df[['company','year','vague_per_1000','specificity_ratio']],
-            on=['company','year'], how='left')
+        # model_df already has vague_per_1000 - no merge needed
 
         final_with_co2 = pd.read_csv("data/final_features.csv")
+        final_with_co2 = final_with_co2.sort_values(['company','year'])
+        final_with_co2['co2_yoy'] = final_with_co2.groupby('company')[
+            'co2_tonnes'].pct_change(fill_method=None) * 100
         final_with_co2['greenwashing_label'] = final_with_co2.apply(
             lambda r: 1 if (r['company'], r['year']) in
             {('hsbc',2021),('hsbc',2022),('shell',2021),('shell',2022),('bp',2023)}
@@ -424,9 +425,12 @@ with tab1:
         final_with_co2['co2_yoy'] = final_with_co2.groupby('company')[
             'co2_tonnes'].pct_change(fill_method=None) * 100
 
-        scatter_data = merged.merge(
-            final_with_co2[['company','year','co2_yoy']], on=['company','year'],
-            how='left').dropna(subset=['co2_yoy','vague_per_1000'])
+        scatter_data = filtered.copy()
+        scatter_data = scatter_data.merge(
+            final_with_co2[['company','year','co2_yoy']],
+            on=['company','year'], how='left')
+        scatter_data = scatter_data.dropna(subset=['co2_yoy'])
+        scatter_data['vague_per_1000'] = scatter_data['vague_per_1000'].fillna(0)
 
         colors = scatter_data.apply(
             lambda r: '#ef5350' if r['greenwashing_label']==1
