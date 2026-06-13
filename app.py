@@ -8,7 +8,7 @@ from plotly.subplots import make_subplots
 import pdfplumber
 import re
 import pickle
-import torch
+# import torch  # removed - not needed for dashboard
 import warnings
 import logging
 warnings.filterwarnings("ignore")
