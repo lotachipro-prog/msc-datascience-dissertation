@@ -1,8 +1,16 @@
+# .streamlit/config.toml
+# Theme: UK institutional / policy-paper. Place this file at .streamlit/config.toml in the repo root.
+
 [theme]
-primaryColor = "#4fc3f7"
-backgroundColor = "#0a0e17"
-secondaryBackgroundColor = "#0d1926"
-textColor = "#e0f2fe"
+base = "light"
+primaryColor = "#1F4E79"          # accent navy - interactive elements
+backgroundColor = "#FBFAF7"       # paper - warm archival off-white
+secondaryBackgroundColor = "#F3F1EB"  # sidebar / cards
+textColor = "#14212B"             # ink
+font = "sans serif"
 
 [server]
-headless = true
+maxUploadSize = 25
+
+[browser]
+gatherUsageStats = false
