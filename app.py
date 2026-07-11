@@ -155,15 +155,19 @@ def load_csv(name: str):
     return None
 
 
-def col(df: pd.DataFrame, *candidates):
-    """Return the first column whose normalised name matches a candidate."""
+def col(df: pd.DataFrame, *candidates, contains=()):
+    """Resolve a column by exact normalised name, then by substring fallback."""
     if df is None:
         return None
-    norm = {re.sub(r"[^a-z0-9]", "", c.lower()): c for c in df.columns}
+    norm = {re.sub(r"[^a-z0-9]", "", str(c).lower()): c for c in df.columns}
     for cand in candidates:
         key = re.sub(r"[^a-z0-9]", "", cand.lower())
         if key in norm:
             return norm[key]
+    for token in contains:                      # substring fallback
+        for key, original in norm.items():
+            if token in key:
+                return original
     return None
 
 
@@ -195,8 +199,8 @@ esgsi_df = load_csv("esgsi_extended.csv")
 master = None
 if risk_df is not None:
     master = risk_df.copy()
-    C_COMP = col(master, "company", "firm", "name")
-    C_YEAR = col(master, "year", "report_year")
+    C_COMP = col(master, "company", "firm", "name", contains=("company", "firm"))
+    C_YEAR = col(master, "year", "report_year", contains=("year",))
     C_RISK = col(master, "risk_score", "final_risk", "probability", "prob", "score",
                  "risk", "oof_prob", "y_prob", "pred_prob", "predicted_prob")
     C_LABEL = col(master, "greenwashing_label", "label", "status", "known_status",
@@ -208,28 +212,28 @@ else:
 # attach NLP features
 C_VAGUE = C_SPEC = C_POS = None
 if master is not None and nlp_df is not None:
-    n_comp = col(nlp_df, "company", "firm", "name")
-    n_year = col(nlp_df, "year", "report_year")
+    n_comp = col(nlp_df, "company", "firm", "name", contains=("company", "firm"))
+    n_year = col(nlp_df, "year", "report_year", contains=("year",))
     if n_comp and n_year:
         nlp = nlp_df.copy()
         nlp["_k"] = nlp[n_comp].map(norm_company).astype(str) + "|" + nlp[n_year].astype(str)
         master["_k"] = master[C_COMP].map(norm_company).astype(str) + "|" + master[C_YEAR].astype(str)
         keep = [c for c in nlp.columns if c not in (n_comp, n_year, "_k")]
         master = master.merge(nlp[keep + ["_k"]].drop_duplicates("_k"), on="_k", how="left")
-    C_VAGUE = col(master, "vague_per_1000", "vague_density", "vagueper1000",
-                  "vague_commitment_per_1000", "vague", "vague_count_per_1000",
-                  "vague_per1000", "vaguecommitment")
-    C_SPEC = col(master, "specificity_ratio", "spec_ratio", "r_spec", "specificity",
-                 "quant_specificity", "specificity_score")
-    C_POS = col(master, "positive_per_1000", "positive_density", "positive",
-                "positive_per1000", "sentiment_positive")
+    C_VAGUE = col(master, "vague_per_1000", "vague_density", contains=("vague",))
+    C_SPEC = col(master, "specificity_ratio", "spec_ratio", "r_spec",
+                 contains=("specific", "spec"))
+    C_POS = col(master, "positive_per_1000", "positive_density",
+                contains=("positive", "sentiment"))
 
 # attach emissions + YoY
 C_CO2YOY = None
 if master is not None and emis_df is not None:
-    e_comp = col(emis_df, "ftse_company", "company", "operator")
-    e_year = col(emis_df, "year")
-    e_co2 = col(emis_df, "co2_tonnes", "co2", "emissions_tonnes", "co2tonnes")
+    e_comp = col(emis_df, "ftse_company", "company", "operator",
+                 contains=("company", "operator", "firm"))
+    e_year = col(emis_df, "year", contains=("year",))
+    e_co2 = col(emis_df, "co2_tonnes", "co2", "emissions_tonnes",
+                contains=("co2", "emission", "tonne"))
     if e_comp and e_year and e_co2:
         e = emis_df[[e_comp, e_year, e_co2]].copy()
         e.columns = ["_ec", "_ey", "_co2"]
@@ -412,8 +416,16 @@ with tab_matrix:
                 "language inside this region."
             )
         else:
-            missing = "ftse_naei_emissions.csv" if not C_CO2YOY else "nlp_features.csv (vague_per_1000)"
-            st.info(f"Matrix unavailable: could not resolve data from `{missing}`.")
+            bits = []
+            if not C_CO2YOY:
+                bits.append("emissions year-on-year change (ftse_naei_emissions.csv)")
+            if not C_VAGUE:
+                bits.append("vague-language density (nlp_features.csv)")
+            st.info(
+                "Matrix unavailable \u2014 could not resolve: " + "; ".join(bits) +
+                ". Open **Data diagnostics** in the sidebar to see the column names "
+                "the app found in each file."
+            )
 
     # ---- risk leaderboard ---------------------------------------------------
     with right:
