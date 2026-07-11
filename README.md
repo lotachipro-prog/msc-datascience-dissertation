@@ -12,7 +12,7 @@ https://lotachipro-prog-msc-datascience-dissertation.streamlit.app
 ## Anchor Paper
 ESG-washing detection in corporate sustainability reports
 International Review of Financial Analysis (2024) | IF: 9.8 | SCIE Verified
-DOI: 10.1016/j.irfa.2024.103553
+doi: 10.1016/j.irfa.2024.103742
 
 ## Key Results
 - ROC-AUC: 0.881 (leak-free LOO-CV)
