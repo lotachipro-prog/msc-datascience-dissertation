@@ -496,9 +496,9 @@ with tab_scan:
     up = st.file_uploader("Sustainability report (PDF, \u2264 25 MB)", type=["pdf"])
     if up is not None:
         try:
-            import pdfplumber
-            with pdfplumber.open(up) as pdf:
-                text = " ".join((page.extract_text() or "") for page in pdf.pages)
+            from pypdf import PdfReader
+            reader = PdfReader(up)
+            text = " ".join((page.extract_text() or "") for page in reader.pages)
         except Exception as exc:
             st.error(f"Could not read that PDF ({exc}).")
             text = ""
