@@ -45,6 +45,73 @@ STATUS_STYLE = {
 FONT_BODY = "'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif"
 FONT_MONO = "'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace"
 
+# --------------------------------------------------- dissertation lexicons ---
+# Verbatim from the pipeline (nlp_features.csv generation). Counting is by
+# phrase substring, exactly as in the offline notebook, so a report scanned
+# here reproduces the figures reported in the dissertation.
+VAGUE_TERMS = ["committed to", "working towards", "aim to", "aspire to",
+               "ambition to", "strive to", "endeavour to", "seek to",
+               "dedicated to", "pursuing", "exploring", "considering",
+               "hope to", "intend to", "plan to", "target to"]
+ACTION_TERMS = ["achieved", "delivered", "completed", "reduced by",
+                "decreased by", "cut by", "eliminated", "reached",
+                "met our", "exceeded", "verified", "certified"]
+HEDGE_TERMS = ["may", "might", "could", "would", "should", "expect to",
+               "anticipate", "subject to", "depending on", "if",
+               "assuming", "provided that", "contingent"]
+POSITIVE_TERMS = ["progress", "success", "improvement", "leadership",
+                  "innovative", "sustainable", "responsible", "green",
+                  "clean", "renewable", "net zero", "carbon neutral"]
+CREDIBILITY_TERMS = ["third party", "verified", "assured", "audited",
+                     "independently", "kpmg", "deloitte", "pwc", "ey ",
+                     "bureau veritas", "sgs ", "dnv"]
+QUANT_PATTERNS = [
+    r"\b(\d+(?:\.\d+)?)\s*(?:per\s*cent|percent|%)\s*(?:reduction|decrease|decline|lower|cut|fell)",
+    r"(?:reduction|decrease|decline|lower|cut|fell)\s*(?:of|by)\s*(\d+(?:\.\d+)?)\s*(?:per\s*cent|percent|%)",
+    r"\b(\d+(?:,\d+)?(?:\.\d+)?)\s*(?:million|billion)?\s*(?:tonnes?|tco2e|mtco2e|ktco2)",
+    r"(?:net\s*zero|carbon\s*neutral)\s*by\s*(\d{4})",
+    r"(?:reduce|cut|lower|decrease)\s+(?:\w+\s+){0,5}(?:emissions?|carbon|ghg|co2)",
+]
+
+
+def extract_nlp_features(text: str) -> dict:
+    """Compute the seven rule-based features exactly as the offline pipeline does."""
+    text = re.sub(r"\s+", " ", text).strip()
+    low = text.lower()
+    words = text.split()
+    n = max(len(words), 1)
+
+    quant_claims = []
+    for pattern in QUANT_PATTERNS:
+        quant_claims.extend(re.findall(pattern, low))
+
+    sust = (low.count("emission") + low.count("carbon")
+            + low.count("climate") + low.count("ghg"))
+
+    vague = sum(low.count(t) for t in VAGUE_TERMS)
+    action = sum(low.count(t) for t in ACTION_TERMS)
+    hedge = sum(low.count(t) for t in HEDGE_TERMS)
+    positive = sum(low.count(t) for t in POSITIVE_TERMS)
+    credibility = sum(low.count(t) for t in CREDIBILITY_TERMS)
+
+    positive_per_1000 = positive / n * 1000
+    buzzword_density = sust / n * 1000
+
+    return {
+        "word_count": len(words),
+        "sustainability_mentions": sust,
+        "quant_claims_count": len(quant_claims),
+        "specificity_ratio": len(quant_claims) / max(sust, 1),
+        "vague_per_1000": vague / n * 1000,
+        "action_per_1000": action / n * 1000,
+        "hedge_per_1000": hedge / n * 1000,
+        "positive_per_1000": positive_per_1000,
+        "credibility_count": credibility,
+        # anchor-paper ESGSI baseline (Lagasio): sentiment x buzzword density
+        "esgsi_raw": (positive_per_1000 / 10) * buzzword_density,
+    }
+
+
 # ------------------------------------------------------------- page setup ---
 st.set_page_config(
     page_title="FTSE ESG Anomaly Intelligence Platform",
@@ -519,58 +586,105 @@ with tab_profile:
 with tab_scan:
     st.markdown("##### Scan a sustainability report")
     st.caption(
-        "Upload a PDF to extract the rule-based disclosure features and compare "
-        "them against the FTSE study distribution. This live scan uses the "
-        "dissertation's lexicon features (Table 2 subset); full ClimateBERT "
-        "semantic scoring runs in the offline pipeline, not in this browser demo."
+        "Extracts all seven rule-based disclosure features using the exact "
+        "lexicons and phrase-matching rules of the dissertation pipeline, plus "
+        "the anchor paper's text-only ESGSI baseline. ClimateBERT semantic "
+        "embeddings and the emissions cross-reference run offline (transformer "
+        "inference exceeds this deployment's memory budget), so no model risk "
+        "score is produced here."
     )
     up = st.file_uploader("Sustainability report (PDF, \u2264 25 MB)", type=["pdf"])
+
     if up is not None:
+        text = ""
         try:
             from pypdf import PdfReader
-            reader = PdfReader(up)
-            text = " ".join((page.extract_text() or "") for page in reader.pages)
+            with st.spinner("Extracting text\u2026"):
+                reader = PdfReader(up)
+                text = " ".join((page.extract_text() or "") for page in reader.pages)
         except Exception as exc:
             st.error(f"Could not read that PDF ({exc}).")
-            text = ""
 
-        words = re.findall(r"[a-zA-Z']+", text.lower())
-        n_words = max(len(words), 1)
-        if n_words < 300:
-            st.warning("Very little text extracted — the PDF may be image-only (scanned).")
-        else:
-            VAGUE = {"aim", "aspire", "ambition", "strive", "seek", "intend",
-                     "endeavour", "explore", "commitment", "committed", "journey",
-                     "roadmap", "pathway", "aspiration", "believe", "hope"}
-            POSITIVE = {"sustainable", "green", "renewable", "responsible",
-                        "resilient", "leading", "progress", "achievement",
-                        "improved", "success", "positive", "strong"}
-            v = sum(w in VAGUE for w in words) / n_words * 1000
-            p = sum(w in POSITIVE for w in words) / n_words * 1000
-            quant = len(re.findall(
-                r"\b\d[\d,.]*\s*(?:%|percent|tonnes?|tco2e?|mwh|gwh|kt|mt)\b",
-                text.lower()))
-            sust_mentions = max(sum(w in {"sustainability", "sustainable", "esg",
-                                          "climate", "emissions", "carbon"}
-                                    for w in words), 1)
-            spec = quant / sust_mentions
+        if text and len(text.split()) < 300:
+            st.warning(
+                "Very little text extracted \u2014 this PDF is probably image-only "
+                "(scanned). The pipeline requires a text layer."
+            )
+        elif text:
+            f = extract_nlp_features(text)
 
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Words extracted", f"{n_words:,}")
-            c2.metric("Vague / 1,000", f"{v:.2f}")
-            c3.metric("Positive / 1,000", f"{p:.2f}")
-            c4.metric("Specificity ratio", f"{spec:.3f}")
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Words extracted", f"{f['word_count']:,}")
+            m2.metric("Sustainability mentions", f"{f['sustainability_mentions']:,}")
+            m3.metric("Quantitative claims", f"{f['quant_claims_count']:,}")
 
-            if C_VAGUE and view[C_VAGUE].notna().sum() >= 5:
-                pct = float((view[C_VAGUE] < v).mean() * 100)
+            st.markdown("###### Rule-based feature vector")
+
+            FEATURES = [
+                ("specificity_ratio", "Specificity ratio",
+                 "quantitative claims per sustainability mention"),
+                ("vague_per_1000", "Vague commitment / 1,000",
+                 "\u201ccommitted to\u201d, \u201caim to\u201d, \u201cworking towards\u201d \u2014 strongest SHAP feature"),
+                ("action_per_1000", "Action language / 1,000",
+                 "\u201cachieved\u201d, \u201cdelivered\u201d, \u201creduced by\u201d"),
+                ("hedge_per_1000", "Hedging / 1,000",
+                 "\u201cmay\u201d, \u201cmight\u201d, \u201csubject to\u201d"),
+                ("positive_per_1000", "Positive sentiment / 1,000",
+                 "\u201cprogress\u201d, \u201csustainable\u201d, \u201cnet zero\u201d"),
+                ("credibility_count", "Credibility references",
+                 "third-party assurance mentions (raw count)"),
+                ("quant_claims_count", "Quantitative claims",
+                 "regex-extracted numerical emissions claims (raw count)"),
+            ]
+
+            rows = []
+            for key, label, desc in FEATURES:
+                c = col(view, key, contains=(key.split("_")[0],))
+                pct = None
+                if c is not None and view[c].notna().sum() >= 5:
+                    pct = float((pd.to_numeric(view[c], errors="coerce") < f[key]).mean() * 100)
+                rows.append({
+                    "Feature": label,
+                    "Value": round(f[key], 3),
+                    "FTSE percentile": (f"{pct:.0f}th" if pct is not None else "\u2014"),
+                    "Definition": desc,
+                })
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+            st.markdown("###### Derived indices")
+            d1, d2 = st.columns(2)
+            with d1:
+                contrast = f["vague_per_1000"] - f["action_per_1000"]
+                verdict = ("aspiration-weighted" if contrast > 0
+                           else "achievement-weighted")
+                st.metric("Vague \u2212 action contrast", f"{contrast:+.2f}",
+                          help="Positive means the report promises more than it reports having done.")
+                st.caption(f"Language profile is **{verdict}**.")
+            with d2:
+                st.metric("Anchor-paper ESGSI (text-only)", f"{f['esgsi_raw']:.2f}",
+                          help="Lagasio baseline: sentiment score x buzzword density. "
+                               "The Extended ESGSI adds the verified-emissions penalty term, "
+                               "which needs a matched NAEI operator and so cannot be computed "
+                               "for an arbitrary upload.")
+                st.caption("Emissions penalty term unavailable for unmatched firms.")
+
+            key_vague = col(view, "vague_per_1000", contains=("vague",))
+            if key_vague is not None and view[key_vague].notna().sum() >= 5:
+                pct = float((pd.to_numeric(view[key_vague], errors="coerce")
+                             < f["vague_per_1000"]).mean() * 100)
                 st.markdown(
-                    f"Vague-language density sits at the **{pct:.0f}th percentile** "
-                    f"of the FTSE study distribution "
-                    f"({'above' if pct >= 50 else 'below'} the median report)."
+                    f"Vague-commitment density places this report at the "
+                    f"**{pct:.0f}th percentile** of the 37-observation FTSE study set "
+                    f"({'above' if pct >= 50 else 'below'} the median report). For "
+                    f"reference, confirmed cases in the study cluster in the upper "
+                    f"range of this distribution."
                 )
+
             st.caption(
-                "Indicative screening only: lexicon subset, no semantic model, "
-                "no emissions cross-reference for uploaded documents."
+                "Indicative screening only. A high vagueness score is not evidence of "
+                "greenwashing: the dissertation's finding is that vagueness matters "
+                "*in combination with* rising verified emissions, which this "
+                "single-document scan cannot assess."
             )
 
 # ---------------------------------------------------------------- footer ----
